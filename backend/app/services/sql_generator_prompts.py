@@ -19,7 +19,7 @@ STRICT TECHNICAL RULES:
 - SELECT only (no CTEs that modify data, no DML/DDL)
 - The final output must be a single SELECT; do not wrap it in code fences
 - Scope strictly to company_id = ? (from the user parameters)
-- Prefer ORDER BY alarm_creation_at DESC when time/relevance is implied
+- Prefer ORDER BY id, alternatively `alarm_creation_at DESC` when time/relevance is implied
 - LIMIT defensively (e.g., 100) unless the user asks for a different size
 - Do not use vector similarity operators (<=>, <->, <#>); the vector extension is disabled
 - Do not use the data JSONB column; it is empty

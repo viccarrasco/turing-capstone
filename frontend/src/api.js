@@ -46,12 +46,13 @@ async function request(path, options = {}) {
   return res.json();
 }
 
-export function chatQuery(question, companyId) {
-  return request("/api/chat/query", {
-    method: "POST",
-    body: JSON.stringify({ question, company_id: Number(companyId) })
-  });
-}
+// DEPRECATED: Replaced by queryV1. Kept for reference; remove in a future cleanup.
+// export function chatQuery(question, companyId) {
+//   return request("/api/chat/query", {
+//     method: "POST",
+//     body: JSON.stringify({ question, company_id: Number(companyId) })
+//   });
+// }
 
 function v1EnvelopeToLegacy(envelope, executionSeconds) {
   const meta = envelope?.meta || {};
