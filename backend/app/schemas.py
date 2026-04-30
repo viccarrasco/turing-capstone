@@ -4,11 +4,17 @@ from typing import Any, List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+# DEPRECATED: Used only by the legacy /api/chat/query endpoint.
+# Kept for backward compatibility reference; safe to remove in a future cleanup.
+# unused: no active callers
 class ChatQueryRequest(BaseModel):
     question: str
     company_id: int
 
 
+# DEPRECATED: Used only by the legacy /api/chat/query endpoint.
+# Kept for backward compatibility reference; safe to remove in a future cleanup.
+# unused: no active callers
 class ChatQueryResponse(BaseModel):
     success: bool
     results: Any

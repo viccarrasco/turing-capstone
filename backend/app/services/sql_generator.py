@@ -29,6 +29,7 @@ from .sql_generator_prompts import (
 from .openai_client import get_chat_model
 from .sql_validator import is_safe_sql, sanitize_sql
 
+# If the openai package isn't available or has a different shape, these fall back to None.
 try:
     from openai import APIConnectionError, APIStatusError, APITimeoutError, RateLimitError
 except Exception:  # pragma: no cover - openai package shape may differ by version
@@ -37,37 +38,9 @@ except Exception:  # pragma: no cover - openai package shape may differ by versi
     APITimeoutError = None  # type: ignore[assignment]
     RateLimitError = None  # type: ignore[assignment]
 
-try:
-    from langsmith import traceable as _traceable
-    _langsmith_traceable_available = True
-except Exception:  # pragma: no cover - optional dependency
-    _langsmith_traceable_available = False
-    def _traceable(*args, **kwargs):  # type: ignore
-        def decorator(func):
-            return func
-        return decorator
-
-
-_langsmith_tracing_logged = False
-
-
-def _traceable_if_enabled(*args, **kwargs):
-    if not settings.langsmith_tracing:
-        def decorator(func):
-            return func
-        return decorator
-    global _langsmith_tracing_logged
-    if not _langsmith_tracing_logged:
-        _langsmith_tracing_logged = True
-        logger.info("LangSmith tracing enabled for SQL generation flow.")
-    return _traceable(*args, **kwargs)
-
+from langsmith import traceable as _traceable
 
 logger = logging.getLogger(__name__)
-if settings.langsmith_tracing and not _langsmith_traceable_available:
-    logger.warning(
-        "LangSmith tracing is enabled, but langsmith.traceable is unavailable; LangGraph traces will not be recorded."
-    )
 SQL_GENERATION_FALLBACK_SQL = "SELECT 'Error generating SQL' as error;"
 RESPONSE_TYPE_GRAPH_JSON = "graph_json"
 RESPONSE_TYPE_TABLE_RECORDS = "table_records"
@@ -82,6 +55,9 @@ VALID_RESPONSE_TYPES = {
     RESPONSE_TYPE_PLAIN_TEXT,
     RESPONSE_TYPE_CSV,
 }
+
+# Contextvars are like thread-local storage but for async contexts.
+# This means if two requests come in simultaneously, their usage tracking and error state won't bleed into each other. Each request gets its own isolated tracking.
 _last_generation_error = contextvars.ContextVar("sql_generation_error", default=None)
 _usage_calls = contextvars.ContextVar("sql_generation_usage_calls", default=None)
 _reasoning_steps = contextvars.ContextVar("sql_generation_reasoning_steps", default=None)
@@ -244,7 +220,8 @@ def _current_reasoning_steps() -> list[str]:
         return [str(step) for step in steps]
     return []
 
-
+# Simple math: (prompt_tokens / 1M * input_price) + (completion_tokens / 1M * output_price).
+# Returns 0.0 if model isn't in the pricing dict.
 def _estimate_cost_usd(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     pricing = _model_pricing_usd_per_1m.get(model)
     if not pricing:
@@ -538,7 +515,7 @@ def _normalize_response_type(value: Any) -> ResponseType:
     return RESPONSE_TYPE_TABLE_RECORDS
 
 
-@_traceable_if_enabled(run_type="llm", name="Results Summarizer LLM")
+@_traceable(run_type="llm", name="Results Summarizer LLM")
 def _summarize_results_with_model(question: str, sql: str, rows: list[dict[str, Any]]) -> dict[str, Any] | None:
     sample_rows = rows[:30]
     payload = {
@@ -631,6 +608,7 @@ class QueryGraphState(TypedDict):
     question: str
     company_id: int
     schema_context: Optional[Dict[str, Any]]
+    conversation_messages: Optional[list[ConversationMessage]]
     sql: Optional[str]
     raw_results: Any
     response_type: Optional[ResponseType]
@@ -641,7 +619,7 @@ class QueryGraphState(TypedDict):
     db_time_ms: int
 
 
-@_traceable_if_enabled(run_type="llm", name="SQL Generator LLM")
+@_traceable(run_type="llm", name="SQL Generator LLM")
 def _generate_with_model(model: str, prompt: str) -> Optional[str]:
     attempts = 0
     max_retries = max(settings.openai_sql_max_retries, 0)
@@ -703,7 +681,7 @@ def _generate_with_stage(model: str, prompt: str, stage: str) -> Optional[str]:
         _llm_stage.reset(token)
 
 
-@_traceable_if_enabled(run_type="chain", name="SQL Candidate A")
+@_traceable(run_type="chain", name="SQL Candidate A")
 def _node_sql_a(state: SqlGraphState) -> SqlGraphState:
     _append_reasoning_step("sql_candidate_a")
     prompt = build_prompt(
@@ -717,7 +695,7 @@ def _node_sql_a(state: SqlGraphState) -> SqlGraphState:
     return {"sql_a": sql}
 
 
-@_traceable_if_enabled(run_type="chain", name="SQL Candidate B")
+@_traceable(run_type="chain", name="SQL Candidate B")
 def _node_sql_b(state: SqlGraphState) -> SqlGraphState:
     _append_reasoning_step("sql_candidate_b")
     prompt = build_prompt(
@@ -731,7 +709,7 @@ def _node_sql_b(state: SqlGraphState) -> SqlGraphState:
     return {"sql_b": sql}
 
 
-@_traceable_if_enabled(run_type="chain", name="SQL Refiner")
+@_traceable(run_type="chain", name="SQL Refiner")
 def _node_refine(state: SqlGraphState) -> SqlGraphState:
     _append_reasoning_step("sql_refine")
     sql_a = _postprocess_sql(state.get("sql_a"), state["company_id"])
@@ -768,7 +746,7 @@ def _node_refine(state: SqlGraphState) -> SqlGraphState:
     return {**state, "sql": sql or sql_a or sql_b}
 
 
-@_traceable_if_enabled(run_type="chain", name="SQL Finalize")
+@_traceable(run_type="chain", name="SQL Finalize")
 def _node_finalize(state: SqlGraphState) -> SqlGraphState:
     _append_reasoning_step("sql_finalize")
     sql = state.get("sql") or state.get("sql_a") or state.get("sql_b")
@@ -798,18 +776,19 @@ _graph = None
 _query_graph = None
 
 
-@_traceable_if_enabled(run_type="chain", name="Pipeline SQL Generation")
+@_traceable(run_type="chain", name="Pipeline SQL Generation")
 def _node_pipeline_generate_sql(state: QueryGraphState) -> QueryGraphState:
     _append_reasoning_step("generate_sql")
     sql = generate_sql_with_langgraph(
         question=state["question"],
         company_id=state["company_id"],
         schema_context=state["schema_context"],
+        conversation_messages=state.get("conversation_messages"),
     )
     return {"sql": sql}
 
 
-@_traceable_if_enabled(run_type="chain", name="Pipeline SQL Execution")
+@_traceable(run_type="chain", name="Pipeline SQL Execution")
 def _node_pipeline_execute_sql(state: QueryGraphState) -> QueryGraphState:
     _append_reasoning_step("execute_sql")
     sql = state.get("sql")
@@ -839,7 +818,7 @@ def _node_pipeline_execute_sql(state: QueryGraphState) -> QueryGraphState:
     }
 
 
-@_traceable_if_enabled(run_type="chain", name="Pipeline Summarize Results")
+@_traceable(run_type="chain", name="Pipeline Summarize Results")
 def _node_pipeline_summarize(state: QueryGraphState) -> QueryGraphState:
     _append_reasoning_step("summarize_results")
     raw_results = state.get("raw_results")
@@ -910,7 +889,7 @@ def _get_query_graph():
     return _query_graph
 
 
-@_traceable_if_enabled(run_type="chain", name="LangGraph SQL Generation")
+@_traceable(run_type="chain", name="LangGraph SQL Generation")
 def generate_sql_with_langgraph(
     question: str,
     company_id: int,
@@ -918,6 +897,7 @@ def generate_sql_with_langgraph(
     conversation_messages: list[ConversationMessage] | None = None,
 ) -> str:
     clear_last_generation_error()
+
     try:
         state: SqlGraphState = {
             "question": question,
@@ -928,8 +908,11 @@ def generate_sql_with_langgraph(
             "sql_b": None,
             "sql": None,
         }
+
         result = _get_graph().invoke(state)
+
         sql = result.get("sql") or result.get("sql_a") or result.get("sql_b")
+
         if not sql:
             error_info = get_last_generation_error() or {
                 "type": "service_unavailable",
@@ -939,8 +922,10 @@ def generate_sql_with_langgraph(
             _last_generation_error.set(error_info)
             raise SQLGenerationException(error_info)
         return sql
+
     except SQLGenerationException:
         raise
+
     except Exception as exc:
         classified = _classify_generation_exception(exc)
         _last_generation_error.set(classified)
@@ -952,20 +937,23 @@ def generate_sql_with_langgraph(
         raise SQLGenerationException(classified) from exc
 
 
-@_traceable_if_enabled(run_type="chain", name="LangGraph SQL Query Pipeline")
+@_traceable(run_type="chain", name="LangGraph SQL Query Pipeline")
 def generate_query_result_with_langgraph(
     db: Any,
     question: str,
     company_id: int,
     schema_context: dict | None = None,
+    conversation_messages: list[ConversationMessage] | None = None,
 ) -> QueryPipelineResult:
     _reset_run_tracking()
+
     try:
         state: QueryGraphState = {
             "db": db,
             "question": question,
             "company_id": company_id,
             "schema_context": schema_context,
+            "conversation_messages": conversation_messages,
             "sql": None,
             "raw_results": [],
             "response_type": None,
@@ -975,21 +963,30 @@ def generate_query_result_with_langgraph(
             "row_count": 0,
             "db_time_ms": 0,
         }
+
         result = _get_query_graph().invoke(state)
+
         sql = result.get("sql") or ""
+
         response_type = result.get("response_type")
+
         if not isinstance(response_type, str) or response_type not in VALID_RESPONSE_TYPES:
             response_type = RESPONSE_TYPE_PLAIN_TEXT
         summary = result.get("summary")
+
         if not isinstance(summary, str):
             summary = ""
         row_count = result.get("row_count")
+
         if not isinstance(row_count, int):
             row_count = 0
         db_time_ms = result.get("db_time_ms")
+
         if not isinstance(db_time_ms, int):
             db_time_ms = 0
+
         success = bool(result.get("success")) and bool(sql)
+
         meta = build_default_query_meta(
             sql=sql,
             response_type=response_type,
@@ -997,6 +994,7 @@ def generate_query_result_with_langgraph(
             reasoning_steps=_current_reasoning_steps(),
             usage=_current_usage_meta(total_db_time_ms=db_time_ms),
         )
+
         return {
             "sql": sql,
             "success": success,
@@ -1017,6 +1015,7 @@ def generate_query_result_with_langgraph(
             reasoning_steps=_current_reasoning_steps(),
             usage=_current_usage_meta(total_db_time_ms=0),
         )
+
         return {
             "sql": "",
             "success": False,

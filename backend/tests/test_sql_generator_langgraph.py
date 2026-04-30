@@ -130,7 +130,7 @@ def test_query_pipeline_returns_table_records_with_summary(monkeypatch):
     monkeypatch.setattr(
         sql_generator,
         "generate_sql_with_langgraph",
-        lambda question, company_id, schema_context: "SELECT responder_name, COUNT(*) AS alarm_count FROM historic_alarms",
+        lambda question, company_id, schema_context, conversation_messages=None: "SELECT responder_name, COUNT(*) AS alarm_count FROM historic_alarms",
     )
     monkeypatch.setattr(agent_tools, "execute_safe_query", lambda db, sql, company_id: rows)
     monkeypatch.setattr(
@@ -169,7 +169,7 @@ def test_query_pipeline_can_return_graph_json(monkeypatch):
     monkeypatch.setattr(
         sql_generator,
         "generate_sql_with_langgraph",
-        lambda question, company_id, schema_context: "SELECT DATE(alarm_creation_at) AS day, COUNT(*) AS alarms FROM historic_alarms",
+        lambda question, company_id, schema_context, conversation_messages=None: "SELECT DATE(alarm_creation_at) AS day, COUNT(*) AS alarms FROM historic_alarms",
     )
     monkeypatch.setattr(
         agent_tools,
@@ -215,7 +215,7 @@ def test_query_pipeline_returns_plain_text_on_execution_error(monkeypatch):
     monkeypatch.setattr(
         sql_generator,
         "generate_sql_with_langgraph",
-        lambda question, company_id, schema_context: "SELECT * FROM historic_alarms",
+        lambda question, company_id, schema_context, conversation_messages=None: "SELECT * FROM historic_alarms",
     )
     monkeypatch.setattr(
         agent_tools,
@@ -245,7 +245,7 @@ def test_query_pipeline_returns_csv_when_rows_exceed_threshold(monkeypatch):
     monkeypatch.setattr(
         sql_generator,
         "generate_sql_with_langgraph",
-        lambda question, company_id, schema_context: "SELECT alarm_id, client_description FROM historic_alarms",
+        lambda question, company_id, schema_context, conversation_messages=None: "SELECT alarm_id, client_description FROM historic_alarms",
     )
     monkeypatch.setattr(agent_tools, "execute_safe_query", lambda db, sql, company_id: rows)
     monkeypatch.setattr(

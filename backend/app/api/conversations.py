@@ -15,11 +15,9 @@ from ..schemas import (
     MessageResponse,
 )
 from ..security import require_api_key
-from ..services.query_executor import execute_safe_query
-from ..services.response_generator import generate_response
 from ..services.sql_generation_errors import build_sql_generation_user_error
 from ..services.sql_generator import (
-    generate_sql,
+    generate_query_result_with_langgraph,
     SQLGenerationException,
 )
 from ..services.title_generator import generate_title
@@ -145,7 +143,8 @@ def create_message(
     conversation_messages = _get_recent_messages(db, conversation.id, limit=10)
 
     try:
-        sql = generate_sql(
+        pipeline_result = generate_query_result_with_langgraph(
+            db=db,
             question=question,
             company_id=company_id,
             schema_context=None,
@@ -168,15 +167,12 @@ def create_message(
         response_text = user_error["error"]
         result_rows = []
         sql = None
+        meta_dict = None
     else:
-        results = execute_safe_query(db, sql, company_id)
-        result_rows = results if isinstance(results, list) else []
-        response_text = generate_response(
-            question=question,
-            sql_results=result_rows,
-            sql_query=sql,
-            conversation_messages=conversation_messages,
-        )
+        sql = pipeline_result["sql"] or None
+        result_rows = pipeline_result["results"] if isinstance(pipeline_result["results"], list) else []
+        response_text = pipeline_result["summary"]
+        meta_dict = pipeline_result["meta"]
 
     assistant_message = Message(
         conversation_id=conversation.id,
@@ -184,6 +180,7 @@ def create_message(
         content=response_text,
         sql_query=sql,
         query_results=result_rows,
+        usage_meta=meta_dict,
     )
     db.add(assistant_message)
 
