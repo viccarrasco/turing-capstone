@@ -11,7 +11,7 @@ import {
 import ChatView from "./components/ChatView";
 import ConversationsView from "./components/ConversationsView";
 
-const DEFAULT_COMPANY = "601";
+const DEFAULT_COMPANY = "123";
 const EXAMPLE_QUESTIONS = [
   "Which responders closed the most alarms last month?",
   "Show alarms with the longest resolution time this week.",

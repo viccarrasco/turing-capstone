@@ -1,5 +1,7 @@
+from langchain_core.messages import AIMessage
+
 from ..config import settings
-from .openai_client import get_client
+from .openai_client import get_chat_model
 
 
 SYSTEM_PROMPT = """You are a helpful assistant that explains database query results in natural language.
@@ -113,20 +115,16 @@ def generate_response(
             "- Use the conversation context only to resolve references; base factual statements only on the SQL results.\n"
         )
 
-        client = get_client()
-        response = client.chat.completions.create(
-            model=settings.openai_chat_model,
+        chat = get_chat_model(
+            settings.openai_chat_model,
             temperature=0.3,
             max_tokens=500,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": "\n\n".join(prompt_parts),
-                },
-            ],
         )
-        content = response.choices[0].message.content if response.choices else ""
+        ai_message: AIMessage = chat.invoke([
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": "\n\n".join(prompt_parts)},
+        ])
+        content = ai_message.content if isinstance(ai_message.content, str) else ""
         return content.strip() or default_response(sql_results, question)
     except Exception:
         return default_response(sql_results, question)

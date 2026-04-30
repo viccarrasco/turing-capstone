@@ -12,8 +12,6 @@ from ..db import get_db
 from ..models import QueryLog
 from ..redis_client import get_redis
 from ..schemas import (
-    ChatQueryRequest,
-    ChatQueryResponse,
     V1QueryError,
     V1QueryMeta,
     V1QueryRequest,
@@ -451,38 +449,37 @@ def _build_v1_response(result: dict[str, Any]) -> V1QueryResponse:
     )
 
 
-@router.post(
-    "/api/chat/query",
-    response_model=ChatQueryResponse,
-    dependencies=[Depends(require_api_key), Depends(enforce_rate_limit)],
-)
-def chat_query(payload: ChatQueryRequest, db: Session = Depends(get_db)):
-    start = time.time()
-
-    question = payload.question.strip()
-    if not question:
-        raise HTTPException(status_code=400, detail="question is required")
-
-    company_id = payload.company_id
-    query_result = _run_query_flow(db=db, question=question, company_id=company_id)
-    execution_time = time.time() - start
-    _persist_query_log(
-        db=db,
-        question=question,
-        company_id=company_id,
-        sql_query=str(query_result.get("log_sql") or ""),
-        result_count=max(_safe_int(query_result.get("row_count"), 0), 0),
-        execution_time=execution_time,
-    )
-
-    return ChatQueryResponse(
-        success=bool(query_result.get("success")),
-        results=query_result.get("results"),
-        sql=str(query_result.get("sql") or ""),
-        execution_time=execution_time,
-        response_type=str(query_result.get("response_type") or RESPONSE_TYPE_PLAIN_TEXT),
-        summary=str(query_result.get("summary") or ""),
-    )
+# DEPRECATED: Replaced by POST /api/v1/query (v1 envelope).
+# The current frontend exclusively uses /api/v1/query.
+# Kept commented for reference; remove in a future cleanup.
+#
+# @router.post(
+#     "/api/chat/query",
+#     response_model=ChatQueryResponse,
+#     dependencies=[Depends(require_api_key), Depends(enforce_rate_limit)],
+# )
+# def chat_query(payload: ChatQueryRequest, db: Session = Depends(get_db)):
+#     start = time.time()
+#     question = payload.question.strip()
+#     if not question:
+#         raise HTTPException(status_code=400, detail="question is required")
+#     company_id = payload.company_id
+#     query_result = _run_query_flow(db=db, question=question, company_id=company_id)
+#     execution_time = time.time() - start
+#     _persist_query_log(
+#         db=db, question=question, company_id=company_id,
+#         sql_query=str(query_result.get("log_sql") or ""),
+#         result_count=max(_safe_int(query_result.get("row_count"), 0), 0),
+#         execution_time=execution_time,
+#     )
+#     return ChatQueryResponse(
+#         success=bool(query_result.get("success")),
+#         results=query_result.get("results"),
+#         sql=str(query_result.get("sql") or ""),
+#         execution_time=execution_time,
+#         response_type=str(query_result.get("response_type") or RESPONSE_TYPE_PLAIN_TEXT),
+#         summary=str(query_result.get("summary") or ""),
+#     )
 
 
 @router.post(

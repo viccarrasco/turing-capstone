@@ -7,20 +7,15 @@ def test_generate_title_short_question_returns_original():
 
 
 def test_generate_title_long_question_uses_model(monkeypatch):
-    class DummyResponse:
-        def __init__(self):
-            self.choices = [type("Choice", (), {"message": type("Msg", (), {"content": "Alert summary"})()})()]
+    class DummyAIMessage:
+        def __init__(self, content: str):
+            self.content = content
 
     class DummyChat:
-        class completions:
-            @staticmethod
-            def create(**kwargs):
-                return DummyResponse()
+        def invoke(self, messages):
+            return DummyAIMessage("Alert summary")
 
-    class DummyClient:
-        chat = DummyChat()
-
-    monkeypatch.setattr(title_generator, "get_client", lambda: DummyClient())
+    monkeypatch.setattr(title_generator, "get_chat_model", lambda *args, **kwargs: DummyChat())
     monkeypatch.setattr(title_generator.settings, "openai_chat_model", "test-model", raising=False)
 
     question = "x" * (title_generator.MAX_TITLE_LENGTH + 10)

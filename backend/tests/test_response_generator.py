@@ -17,37 +17,20 @@ def test_generate_response_empty_results_uses_default_language():
 def test_generate_response_includes_conversation_context_and_final_sql(monkeypatch):
     import app.services.response_generator as response_generator
 
-    class DummyResponse:
+    class DummyAIMessage:
         def __init__(self, content: str):
-            class _Msg:
-                def __init__(self, content: str):
-                    self.content = content
-
-            class _Choice:
-                def __init__(self, content: str):
-                    self.message = _Msg(content)
-
-            self.choices = [_Choice(content)]
-
-    class DummyCompletions:
-        def __init__(self):
-            self.last_kwargs = None
-
-        def create(self, **kwargs):
-            self.last_kwargs = kwargs
-            return DummyResponse("summary")
+            self.content = content
 
     class DummyChat:
         def __init__(self):
-            self.completions = DummyCompletions()
+            self.last_messages = None
 
-    class DummyClient:
-        def __init__(self):
-            self.chat = DummyChat()
+        def invoke(self, messages):
+            self.last_messages = messages
+            return DummyAIMessage("summary")
 
-    dummy = DummyClient()
-
-    monkeypatch.setattr(response_generator, "get_client", lambda: dummy)
+    dummy_chat = DummyChat()
+    monkeypatch.setattr(response_generator, "get_chat_model", lambda *args, **kwargs: dummy_chat)
     monkeypatch.setattr(response_generator.settings, "openai_chat_model", "test-model", raising=False)
 
     out = generate_response(
@@ -61,10 +44,9 @@ def test_generate_response_includes_conversation_context_and_final_sql(monkeypat
     )
 
     assert out == "summary"
-    kwargs = dummy.chat.completions.last_kwargs
-    assert kwargs["model"] == "test-model"
-    assert len(kwargs["messages"]) == 2
-    user_prompt = kwargs["messages"][1]["content"]
+    messages = dummy_chat.last_messages
+    assert len(messages) == 2
+    user_prompt = messages[1]["content"]
     assert "Conversation context" in user_prompt
     assert "user: Show me recent alarms" in user_prompt
     assert "assistant: Sure, running a query." in user_prompt
