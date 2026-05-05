@@ -8,6 +8,10 @@
 
 This project is the **AI Engineering Capstone** for Turing College, built in collaboration with Seon by Alex Buschle, Nitin, and Victoriano. See [`docs/REPORT.md`](docs/REPORT.md) for the full Case 2 narrative, [`docs/ETHICS.md`](docs/ETHICS.md) for ethical considerations (privacy, hallucination mitigation, transparency), [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the Mongo→Postgres→LangGraph→React data flow, [`docs/DESIGN_DECISIONS.md`](docs/DESIGN_DECISIONS.md) for trade-off rationale (including why we deliberately did not use vector RAG), and [`docs/TENANT_SAFETY.md`](docs/TENANT_SAFETY.md) for the multi-tenant isolation model.
 
+## Acceptance criteria
+
+The document [`docs/PROJECT_EVALUATION_CRITERIA.md`](docs/PROJECT_EVALUATION_CRITERIA.md) outlines SEON's criteria approved by Turing describes MVP goals outlining what was accomplished by the team and decisions to partially or not fully comply with certain aspects.
+
 ---
 
 ## Recent Improvements (April 2026)
